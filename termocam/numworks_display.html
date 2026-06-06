@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NumWorks Display - SPI Framebuffer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: monospace;
+            color: #fff;
+        }
+
+        .display {
+            width: 320px;
+            height: 240px;
+            background: #000;
+            border: 1px solid #333;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            position: relative;
+        }
+
+        .display canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        .status {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            font-size: 12px;
+            color: #666;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="display">
+        <div class="status">NumWorks Display - 320×240 - SPI Ready</div>
+        <canvas id="displayCanvas" width="320" height="240"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('displayCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Initialize display with black background
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, 320, 240);
+
+        // Display is ready for SPI data
+        console.log('NumWorks Display Ready - 320×240 SPI Framebuffer');
+
+        // Function to receive SPI data (placeholder for future implementation)
+        function receiveSPIFrame(frameData) {
+            // frameData should be RGB565 buffer from Raspberry Pi SPI
+            // This will be implemented when connecting to actual SPI bus
+            console.log('SPI Frame received:', frameData.length, 'bytes');
+        }
+
+        // Function to update display from RGB565 buffer
+        function updateDisplayFromSPI(rgb565Buffer) {
+            const imageData = ctx.createImageData(320, 240);
+
+            for (let i = 0; i < rgb565Buffer.length; i++) {
+                const rgb565 = rgb565Buffer[i];
+                const r = ((rgb565 >> 11) & 0x1F) * 255 / 31;
+                const g = ((rgb565 >> 5) & 0x3F) * 255 / 63;
+                const b = (rgb565 & 0x1F) * 255 / 31;
+
+                const pixelIndex = i * 4;
+                imageData.data[pixelIndex] = Math.floor(r);
+                imageData.data[pixelIndex + 1] = Math.floor(g);
+                imageData.data[pixelIndex + 2] = Math.floor(b);
+                imageData.data[pixelIndex + 3] = 255;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        // Expose functions globally for external SPI connection
+        window.numworksDisplay = {
+            receiveSPIFrame,
+            updateDisplayFromSPI,
+            canvas,
+            ctx
+        };
+    </script>
+</body>
+</html>

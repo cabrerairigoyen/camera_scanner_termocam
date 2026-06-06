@@ -1,0 +1,26 @@
+{
+  "points": [
+    [
+      0,
+      686
+    ],
+    [
+      278,
+      245
+    ],
+    [
+      290,
+      874
+    ],
+    [
+      648,
+      720
+    ]
+  ],
+  "image_size": [
+    865,
+    1153
+  ],
+  "source_image": "autofocus_photo.jpg",
+  "calibration_scale": 0.4163052905464007
+}

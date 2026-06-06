@@ -1,0 +1,23 @@
+# Camera configuration
+camera:
+  sensor: "IMX708"
+  resolution: [2304, 1296]
+  jpeg_quality: 90
+
+# Default settings for a sweep session
+sweep:
+  interval_ms: 150
+  max_frames: 120
+  sharpness_threshold: 120.0
+  min_frame_difference: 8.0
+  upload_after_capture: false
+
+# Processing server settings
+server:
+  url: "http://192.168.1.151:8000/process-sweep"
+
+# Protection limits for resource-constrained Pi Zero 2W
+limits:
+  max_temp_c: 80.0
+  min_disk_space_mb: 50
+  max_stream_inactivity_sec: 300

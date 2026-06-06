@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TermoCam - Edge Capture Control Center</title>
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(20, 28, 47, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #5850ec;
+            --primary-hover: #4f46e5;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent: #a78bfa;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(88, 80, 236, 0.15) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(167, 139, 250, 0.1) 0px, transparent 50%);
+            background-attachment: fixed;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .logo-section h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #a78bfa, #5850ec);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+
+        .system-stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-badge {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+
+        .stat-badge span.indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .stat-badge.online span.indicator { background-color: var(--success); }
+        .stat-badge.warn span.indicator { background-color: var(--warning); animation: pulse 1.5s infinite; }
+        .stat-badge.danger span.indicator { background-color: var(--danger); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        /* Layout Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 900px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Card base styles */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            margin-bottom: 30px;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-main);
+        }
+
+        /* Live Camera Card */
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: #05070a;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+        }
+
+        .video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            gap: 15px;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0,0,0,0.6);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .video-overlay .live-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--danger);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        /* Form Configuration */
+        .config-form {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+
+        label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input, select {
+            background: rgba(10, 15, 28, 0.8);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Buttons & Actions */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 12px 24px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            border: 1px solid var(--card-border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        /* Sweep Stats */
+        .sweep-progress {
+            margin-top: 25px;
+            background: rgba(10, 15, 28, 0.6);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--card-border);
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, var(--accent), var(--primary));
+            transition: width 0.3s ease;
+        }
+
+        /* Historical Sessions */
+        .sessions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .session-item {
+            background: rgba(10, 15, 28, 0.5);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .session-item:hover {
+            background: rgba(10, 15, 28, 0.8);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .session-info h4 {
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+            font-family: monospace;
+            color: var(--accent);
+        }
+
+        .session-info p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .session-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        /* Toast Alert system */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        .toast {
+            background: rgba(20, 28, 47, 0.95);
+            border: 1px solid var(--card-border);
+            padding: 14px 20px;
+            border-radius: 10px;
+            color: var(--text-main);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 250px;
+            backdrop-filter: blur(8px);
+            animation: slideIn 0.3s ease forwards;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.warning { border-left: 4px solid var(--warning); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-section">
+                <h1>📷 TermoCam Control</h1>
+                <p>Edge Document Sweep Capture Interface</p>
+            </div>
+            <div class="system-stats">
+                <div class="stat-badge" id="tempBadge">
+                    Temp: <span id="systemTemp">--°C</span>
+                </div>
+                <div class="stat-badge" id="diskBadge">
+                    Disk: <span id="diskSpace">-- MB</span>
+                </div>
+                <div class="stat-badge" id="statusBadge">
+                    <span class="indicator"></span>
+                    Status: <span id="systemStatus">Checking...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Grid -->
+        <div class="dashboard-grid">
+            <!-- Left Side: Live Feed & Active Sweep -->
+            <div class="main-column">
+                <!-- Video Card -->
+                <div class="card">
+                    <div class="card-title">📹 Live Alignment Feed</div>
+                    <div class="video-wrapper">
+                        <!-- Standard dynamic host detection for relative streaming -->
+                        <img src="" id="streamImg" class="video-feed" alt="Live Feed">
+                        <div class="video-placeholder" id="streamPlaceholder">
+                            <span>Camera Stream Stopped</span>
+                            <button class="btn btn-secondary" onclick="toggleStream()">Start Stream</button>
+                        </div>
+                        <div class="video-overlay" id="streamOverlay" style="display: none;">
+                            <span class="live-dot"></span> LIVE
+                        </div>
+                    </div>
+                    <div class="controls-row">
+                        <button class="btn btn-secondary" id="toggleStreamBtn" onclick="toggleStream()">Start Alignment Stream</button>
+                        <button class="btn btn-secondary" onclick="triggerAutofocus()">🎯 Focus Once</button>
+                        <button class="btn btn-primary" onclick="captureStill()">📸 Capture Legacy Still</button>
+                    </div>
+                </div>
+
+                <!-- Active Sweep Session Card -->
+                <div class="card">
+                    <div class="card-title">🔄 Sweep Session Control</div>
+                    
+                    <div class="controls-row">
+                        <button class="btn btn-primary" id="startSweepBtn" onclick="startSweep()">🚀 Start New Sweep</button>
+                        <button class="btn btn-danger" id="stopSweepBtn" onclick="stopSweep()" disabled>🛑 Stop Sweep & Compile</button>
+                    </div>
+
+                    <div class="sweep-progress" id="sweepProgressContainer" style="display: none;">
+                        <h4 style="margin-bottom:10px; color: var(--accent);">Active Session: <span id="activeSessionId" style="font-family: monospace;">-</span></h4>
+                        <div class="progress-stats">
+                            <div>
+                                <div class="stat-value" id="countFrames">0</div>
+                                <div class="stat-label">Total Seen</div>
+                            </div>
+                            <div>
+                                <div class="stat-value" id="countAccepted" style="color: var(--success);">0</div>
+                                <div class="stat-label">Accepted</div>
+                            </div>
+                            <div>
+                                <div class="stat-value" id="countRejected" style="color: var(--danger);">0</div>
+                                <div class="stat-label">Rejected</div>
+                            </div>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="progressBar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Config & Sessions -->
+            <div class="side-column">
+                <!-- Configuration Card -->
+                <div class="card">
+                    <div class="card-title">⚙️ Session Parameters</div>
+                    <div class="config-form">
+                        <div class="form-group">
+                            <label for="intervalMs">Interval (ms)</label>
+                            <input type="number" id="intervalMs" value="150" min="50" max="1000">
+                        </div>
+                        <div class="form-group">
+                            <label for="maxFrames">Max Frames</label>
+                            <input type="number" id="maxFrames" value="120" min="10" max="300">
+                        </div>
+                        <div class="form-group">
+                            <label for="sharpnessThresh">Sharpness Thresh</label>
+                            <input type="number" id="sharpnessThresh" value="120" min="10" max="500">
+                        </div>
+                        <div class="form-group">
+                            <label for="minDiff">Min Motion Diff</label>
+                            <input type="number" id="minDiff" value="8.0" step="0.5" min="1" max="50">
+                        </div>
+                        <div class="form-group">
+                            <label for="jpegQuality">JPEG Quality</label>
+                            <input type="number" id="jpegQuality" value="90" min="50" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="resolution">Resolution</label>
+                            <select id="resolution">
+                                <option value="2304x1296" selected>2304 x 1296 (3MP)</option>
+                                <option value="1920x1080">1920 x 1080 (1080p)</option>
+                                <option value="1280x720">1280 x 720 (720p)</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="serverUrl">Processing Server</label>
+                            <input type="text" id="serverUrl" value="http://192.168.1.151:8000/process-sweep">
+                        </div>
+                        <div class="form-group full-width" style="flex-direction: row; gap: 10px; align-items: center; margin-top: 5px;">
+                            <input type="checkbox" id="uploadAfter" style="width: auto;">
+                            <label for="uploadAfter" style="cursor: pointer; text-transform:none;">Upload automatically on completion</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Past Sessions Card -->
+                <div class="card">
+                    <div class="card-title">📁 Past Sweep Sessions</div>
+                    <div class="sessions-list" id="sessionsList">
+                        <p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No sessions found.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Alerts -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        let isStreaming = false;
+        let activeSweepInterval = null;
+        let isRunning = false;
+        let maxFramesAllowed = 120;
+
+        // Automatically configure dynamic stream image URL
+        const hostUrl = window.location.origin;
+
+        // Show floating message
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            let icon = 'ℹ️';
+            if (type === 'success') icon = '✅';
+            if (type === 'error') icon = '❌';
+            if (type === 'warning') icon = '⚠️';
+            
+            toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Toggle Stream endpoint
+        function toggleStream() {
+            const img = document.getElementById('streamImg');
+            const placeholder = document.getElementById('streamPlaceholder');
+            const overlay = document.getElementById('streamOverlay');
+            const btn = document.getElementById('toggleStreamBtn');
+
+            if (!isStreaming) {
+                // If sweep is running, warn and abort
+                if (isRunning) {
+                    showToast("Cannot stream while a sweep capture is active.", "error");
+                    return;
+                }
+                
+                img.src = `${hostUrl}/stream?t=${new Date().getTime()}`;
+                img.style.display = 'block';
+                placeholder.style.display = 'none';
+                overlay.style.display = 'flex';
+                btn.textContent = 'Stop Alignment Stream';
+                isStreaming = true;
+            } else {
+                img.removeAttribute('src');
+                img.style.display = 'none';
+                placeholder.style.display = 'flex';
+                overlay.style.display = 'none';
+                btn.textContent = 'Start Alignment Stream';
+                isStreaming = false;
+            }
+        }
+
+        // Trigger manual focus once
+        function triggerAutofocus() {
+            showToast("Focusing lens...", "warning");
+            fetch(`${hostUrl}/calibrate`) // Call raw calibrate endpoint which executes lens focus
+                .then(r => {
+                    if (r.ok) showToast("Autofocus locked.");
+                    else showToast("Failed to lock autofocus.", "error");
+                })
+                .catch(e => showToast("Network error during autofocus", "error"));
+        }
+
+        // Capture Single Still
+        function captureStill() {
+            showToast("Capturing high-resolution still...", "warning");
+            fetch(`${hostUrl}/photo`)
+                .then(response => {
+                    if (response.ok) {
+                        showToast("Legacy captured successfully! Downloading still.");
+                        window.open(`${hostUrl}/photo`, '_blank');
+                    } else {
+                        showToast("Error capturing photo still.", "error");
+                    }
+                })
+                .catch(err => showToast("Connection failed.", "error"));
+        }
+
+        // Start sweep capture session
+        function startSweep() {
+            // Read config
+            const interval = parseInt(document.getElementById('intervalMs').value);
+            const maxFrames = parseInt(document.getElementById('maxFrames').value);
+            maxFramesAllowed = maxFrames;
+            const sharpness = parseFloat(document.getElementById('sharpnessThresh').value);
+            const minDiff = parseFloat(document.getElementById('minDiff').value);
+            const quality = parseInt(document.getElementById('jpegQuality').value);
+            const resParts = document.getElementById('resolution').value.split('x');
+            const width = parseInt(resParts[0]);
+            const height = parseInt(resParts[1]);
+            const server = document.getElementById('serverUrl').value;
+            const autoUpload = document.getElementById('uploadAfter').checked;
+
+            const payload = {
+                interval_ms: interval,
+                max_frames: maxFrames,
+                sharpness_threshold: sharpness,
+                min_frame_difference: minDiff,
+                resolution: [width, height],
+                jpeg_quality: quality,
+                upload_after_capture: autoUpload,
+                server_url: server
+            };
+
+            fetch(`${hostUrl}/sweep/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => {
+                if (res.status === 409) {
+                    throw new Error("Camera resource is busy (stream or still capturing active).");
+                }
+                if (!res.ok) throw new Error("Server rejected start request.");
+                return res.json();
+            })
+            .then(data => {
+                showToast(`Session ${data.session_id.substring(0, 8)} started!`, "success");
+                isRunning = true;
+                
+                // If stream was active, stop it
+                if (isStreaming) {
+                    toggleStream();
+                }
+
+                // Update UI buttons
+                document.getElementById('startSweepBtn').disabled = true;
+                document.getElementById('stopSweepBtn').disabled = false;
+                document.getElementById('sweepProgressContainer').style.display = 'block';
+                document.getElementById('activeSessionId').textContent = data.session_id;
+
+                // Start polling
+                startPolling();
+            })
+            .catch(err => {
+                showToast(err.message, "error");
+            });
+        }
+
+        // Stop sweep session
+        function stopSweep() {
+            fetch(`${hostUrl}/sweep/stop`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                showToast(`Sweep stopped! Accepted ${data.accepted_frames} frames.`, "success");
+                isRunning = false;
+                stopPolling();
+                
+                // Update buttons
+                document.getElementById('startSweepBtn').disabled = false;
+                document.getElementById('stopSweepBtn').disabled = true;
+                
+                // Refresh list
+                fetchSessions();
+            })
+            .catch(err => showToast("Error stopping sweep.", "error"));
+        }
+
+        // Polling loop for running sessions
+        function startPolling() {
+            if (activeSweepInterval) clearInterval(activeSweepInterval);
+            
+            // Poll every 400ms
+            activeSweepInterval = setInterval(() => {
+                fetch(`${hostUrl}/sweep/status`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('countFrames').textContent = data.accepted_frames + data.rejected_frames;
+                    document.getElementById('countAccepted').textContent = data.accepted_frames;
+                    document.getElementById('countRejected').textContent = data.rejected_frames;
+                    
+                    const pct = Math.min(100, ((data.accepted_frames + data.rejected_frames) / maxFramesAllowed) * 100);
+                    document.getElementById('progressBar').style.width = `${pct}%`;
+
+                    if (data.status === 'idle' || data.status === 'stopped') {
+                        // Automatically stopped (hit limit)
+                        isRunning = false;
+                        document.getElementById('startSweepBtn').disabled = false;
+                        document.getElementById('stopSweepBtn').disabled = true;
+                        clearInterval(activeSweepInterval);
+                        fetchSessions();
+                    }
+                })
+                .catch(err => {
+                    console.error("Polling error:", err);
+                });
+            }, 400);
+        }
+
+        function stopPolling() {
+            if (activeSweepInterval) {
+                clearInterval(activeSweepInterval);
+                activeSweepInterval = null;
+            }
+        }
+
+        // System status periodic monitor (health checks)
+        function checkSystemHealth() {
+            fetch(`${hostUrl}/health`)
+            .then(res => res.json())
+            .then(data => {
+                // Update Temperature
+                const tempText = data.system_temp_c !== null ? `${data.system_temp_c}°C` : "N/A";
+                const tempBadge = document.getElementById('tempBadge');
+                document.getElementById('systemTemp').textContent = tempText;
+                
+                if (data.system_temp_c > 80) {
+                    tempBadge.className = "stat-badge danger";
+                    showToast("WARNING: Pi CPU is running extremely hot!", "error");
+                } else if (data.system_temp_c > 72) {
+                    tempBadge.className = "stat-badge warn";
+                } else {
+                    tempBadge.className = "stat-badge";
+                }
+
+                // Update Disk
+                const diskMB = data.free_disk_mb !== null ? `${data.free_disk_mb} MB` : "N/A";
+                const diskBadge = document.getElementById('diskBadge');
+                document.getElementById('diskSpace').textContent = diskMB;
+                
+                if (data.free_disk_mb < 50) {
+                    diskBadge.className = "stat-badge danger";
+                } else {
+                    diskBadge.className = "stat-badge";
+                }
+
+                // Update overall system status
+                const badge = document.getElementById('statusBadge');
+                const label = document.getElementById('systemStatus');
+                
+                // If running, override status to Running
+                if (isRunning) {
+                    badge.className = "stat-badge warn";
+                    label.textContent = "CAPTURE ACTIVE";
+                } else {
+                    badge.className = "stat-badge online";
+                    label.textContent = "ONLINE";
+                }
+            })
+            .catch(err => {
+                const badge = document.getElementById('statusBadge');
+                const label = document.getElementById('systemStatus');
+                badge.className = "stat-badge danger";
+                label.textContent = "OFFLINE";
+            });
+        }
+
+        // Load historical sessions
+        function fetchSessions() {
+            fetch(`${hostUrl}/sweep/sessions`)
+            .then(res => res.json())
+            .then(data => {
+                const list = document.getElementById('sessionsList');
+                if (data.sessions.length === 0) {
+                    list.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No sessions found.</p>`;
+                    return;
+                }
+
+                list.innerHTML = '';
+                data.sessions.forEach(sess => {
+                    const date = new Date(sess.created_at).toLocaleString();
+                    const accepted = sess.accepted_frames;
+                    const rejected = sess.rejected_frames;
+                    
+                    const item = document.createElement('div');
+                    item.className = 'session-item';
+                    item.innerHTML = `
+                        <div class="session-info">
+                            <h4>${sess.session_id.substring(0, 12)}...</h4>
+                            <p>${date}</p>
+                            <p style="margin-top:4px;">Frames: <b style="color:var(--success);">${accepted}</b> / <span style="color:var(--text-muted);">${rejected} rejected</span></p>
+                        </div>
+                        <div class="session-actions">
+                            <button class="btn btn-secondary btn-icon" title="Download ZIP" onclick="downloadZip('${sess.session_id}')">💾 ZIP</button>
+                            <button class="btn btn-primary btn-icon" title="Upload to Server" onclick="uploadSession('${sess.session_id}')">📤 Upload</button>
+                            <button class="btn btn-danger btn-icon" title="Delete" onclick="deleteSession('${sess.session_id}')">🗑️</button>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+            })
+            .catch(err => console.error("Error loading sessions:", err));
+        }
+
+        function downloadZip(sid) {
+            window.open(`${hostUrl}/sweep/${sid}/zip`, '_blank');
+        }
+
+        function uploadSession(sid) {
+            showToast("Zipping and uploading session to server...", "warning");
+            fetch(`${hostUrl}/sweep/${sid}/upload`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showToast("Upload completed successfully!");
+                    if (data.response && data.response.job_id) {
+                        showToast(`Server processing Job ID: ${data.response.job_id.substring(0, 8)}...`);
+                    }
+                } else {
+                    showToast(`Upload failed: ${data.message}`, "error");
+                }
+            })
+            .catch(err => showToast("Network error uploading session", "error"));
+        }
+
+        function deleteSession(sid) {
+            if (confirm(`Delete session ${sid}? This will delete all saved frames.`)) {
+                fetch(`${hostUrl}/sweep/${sid}`, { method: 'DELETE' })
+                .then(res => {
+                    if (res.ok) {
+                        showToast("Session deleted.");
+                        fetchSessions();
+                    } else {
+                        showToast("Failed to delete session.", "error");
+                    }
+                })
+                .catch(err => showToast("Network error deleting session.", "error"));
+            }
+        }
+
+        // Start initialization
+        setInterval(checkSystemHealth, 2000);
+        checkSystemHealth();
+        fetchSessions();
+    </script>
+</body>
+</html>
