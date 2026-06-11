@@ -134,7 +134,9 @@ def _run_co_scientist(ocr_text: str, job_path: str, send_to_display: bool) -> di
     # Add BRAIN dir to path so the adapter can find display_client etc.
     brain_dir = str(_REPO_ROOT / "math_solver_backend" / "BRAIN")
     solver_dir = str(_REPO_ROOT / "math_solver_backend")
-    co_dir = str(_REPO_ROOT / "open-ai-co-scientist")
+    co_dir = str(_REPO_ROOT / "open_ai_co_scientist")
+    if not Path(co_dir).exists():
+        co_dir = str(_REPO_ROOT / "open-ai-co-scientist")
     for p in [brain_dir, solver_dir, co_dir, str(_REPO_ROOT)]:
         if p not in sys.path:
             sys.path.insert(0, p)
