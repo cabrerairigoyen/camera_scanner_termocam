@@ -232,9 +232,7 @@ If no quadrilateral contour is found (e.g., the stitched image contains no visib
 2.  **Angle Calculation:** Computes the slope angle $\theta$ of each line. Filters angles to isolate horizontal-ish text paths:
     $$-45^\circ < \theta < 45^\circ$$
 3.  **Median Angle Rotation:** Computes the median angle $\theta_m$ to avoid outliers and rotates the entire canvas around its center coordinates.
-4.  **Content Crop:** Drops dark padding regions by finding the bounding box of non-zero pixels.
-5.  **A4 Fit:** Resizes the content box to standard $2480 \times 3508$ resolution.
-
+4.  **Natural Deskew:** Returns the naturally deskewed panorama without aggressive cropping or arbitrary resizing, perfectly preserving the stitched aspect ratio and text legibility.
 ---
 
 ## 8. OCR Contract & PDF Generation

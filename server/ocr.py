@@ -1,6 +1,9 @@
 import os
 import cv2
 import numpy as np
+import base64
+import requests
+import json
 
 # Safety imports for OCR engines
 try:
@@ -19,7 +22,7 @@ except ImportError:
 def run_ocr(image_path: str) -> dict:
     """
     Runs OCR on the given image.
-    Prefers PaddleOCR, falls back to Tesseract.
+    Prefers Mathpix if credentials exist, falls back to PaddleOCR, then Tesseract.
     If neither is available, returns a descriptive error structure.
     """
     if not os.path.exists(image_path):
@@ -30,6 +33,16 @@ def run_ocr(image_path: str) -> dict:
     if img is None:
         raise ValueError(f"OCR Error: Failed to decode image at {image_path}")
     h, w = img.shape[:2]
+
+    app_id = os.getenv("MATHPIX_APP_ID") or os.getenv("MATHPIX_API_ID")
+    app_key = os.getenv("MATHPIX_APP_KEY")
+    
+    if app_id and app_key:
+        try:
+            print("OCR: Running Mathpix OCR...")
+            return run_mathpix_ocr(image_path, app_id, app_key)
+        except Exception as e:
+            print(f"OCR: Mathpix failed with error: {e}. Falling back to PaddleOCR...")
 
     if PADDLE_AVAILABLE:
         try:
@@ -58,6 +71,39 @@ def run_ocr(image_path: str) -> dict:
         ],
         "fields": {},
         "engine": "None (Mock)"
+    }
+
+def run_mathpix_ocr(image_path: str, app_id: str, app_key: str) -> dict:
+    """Executes Mathpix OCR API call."""
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+        
+    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+    
+    headers = {
+        "app_id": app_id,
+        "app_key": app_key,
+        "Content-type": "application/json"
+    }
+    
+    payload = {
+        "src": f"data:image/jpeg;base64,{base64_image}",
+        "formats": ["text", "data", "html"]
+    }
+    
+    resp = requests.post("https://api.mathpix.com/v3/text", headers=headers, json=payload, timeout=30)
+    
+    if resp.status_code != 200:
+        raise RuntimeError(f"Mathpix OCR failed: HTTP {resp.status_code} {resp.text[:200]}")
+        
+    data = resp.json()
+    text = data.get("text", "")
+    
+    return {
+        "text": text,
+        "lines": [{"text": text, "confidence": 1.0, "bbox": []}], # Mathpix doesn't give line bounding boxes in basic /text endpoint
+        "fields": data,
+        "engine": "Mathpix"
     }
 
 

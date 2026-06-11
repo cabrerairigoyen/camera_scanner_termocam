@@ -32,26 +32,22 @@ def enhance_for_ocr(image: np.ndarray, config: dict = None) -> np.ndarray:
     else:
         gray = image
 
-    # 2. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # 2. Apply Unsharp Masking to sharpen text characters
+    blurred_for_mask = cv2.GaussianBlur(gray, (5, 5), 0)
+    sharpened = cv2.addWeighted(gray, 1.6, blurred_for_mask, -0.6, 0)
+    
+    # 3. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to optimize text contrast
     clip_limit = config.get("clahe_clip_limit", 2.5)
     tile_grid = config.get("clahe_grid_size", (8, 8))
     
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid)
-    enhanced_gray = clahe.apply(gray)
+    enhanced_gray = clahe.apply(sharpened)
     
-    # 3. Apply Lightweight Unsharp Masking (Sharpening)
-    # Formula: sharpened = original + (original - blurred) * amount
-    sigma = config.get("sharpen_sigma", 1.5)
-    amount = config.get("sharpen_amount", 0.5)
+    # 4. Mathpix performs best on high-fidelity grayscale or color images.
+    # Aggressive binarization (Adaptive Thresholding) destroys anti-aliasing and faint text.
+    # We will just return the CLAHE enhanced image, converting back to BGR for standard inputs.
     
-    blurred = cv2.GaussianBlur(enhanced_gray, (0, 0), sigma)
-    sharpened_gray = cv2.addWeighted(enhanced_gray, 1.0 + amount, blurred, -amount, 0)
-    
-    # 4. Return as BGR if input was color, otherwise return grayscale
     if is_color:
-        # We can apply the contrast adjustment to the Y channel of YUV
-        # to preserve colors or return grayscale. Since OCR normalized copies
-        # are typically grayscale, returning a BGR image with equalized intensity is standard:
-        return cv2.cvtColor(sharpened_gray, cv2.COLOR_GRAY2BGR)
+        return cv2.cvtColor(enhanced_gray, cv2.COLOR_GRAY2BGR)
     else:
-        return sharpened_gray
+        return enhanced_gray

@@ -1,0 +1,6 @@
+path: ../../datasets/a4_page
+train: images/train
+val: images/val
+
+names:
+  0: document_page

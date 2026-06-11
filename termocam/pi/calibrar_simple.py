@@ -27,7 +27,7 @@ def click_event(event, x, y, flags, params):
             cv2.imshow('Calibrar', img)
 
 if not os.path.exists(IMAGE_PATH):
-    # Try looking in parent dir since documentation says it's in camera_scanner_termocam
+    # Try looking in parent dir since documentation says it's in project_camera_processing
     if os.path.exists('../autofocus_photo.jpg'):
         IMAGE_PATH = '../autofocus_photo.jpg'
     else:

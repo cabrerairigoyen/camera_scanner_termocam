@@ -5,34 +5,63 @@ import numpy as np
 A4_WIDTH = 2480
 A4_HEIGHT = 3508
 
-def rectify_to_a4(image: np.ndarray) -> np.ndarray:
+from server.page_detector import page_detector
+
+def rectify_to_a4(image: np.ndarray) -> tuple[np.ndarray, dict]:
     """
-    Tries to detect the document boundaries and rectify it to A4.
-    If boundary detection fails, performs deskewing and stretches 
-    the bounding box to standard A4 dimensions.
+    Tries to detect the document boundaries using AI segmentation and rectify it to A4.
+    If boundary detection fails, performs deskewing.
+    Returns (rectified_image, metadata_dict).
     """
     if image is None:
-        return None
+        return None, {}
         
-    # 1. First find coordinates if a clear quadrilateral contour exists
-    rectified = detect_and_warp_quad(image)
-    if rectified is not None:
-        print("Rectifier: Successfully warped document using detected quadrilateral.")
-        return rectified
-        
-    # 2. Fallback: Deskew the image, crop black regions, and resize to A4
-    print("Rectifier: Quadrilateral detection inconclusive. Falling back to deskew and fit...")
-    deskewed = deskew_image(image)
-    cropped = crop_content_box(deskewed)
+    print("Rectifier: Running strict page detection...")
+    result = page_detector.detect_page(image, mode="strict")
     
-    # Resize cropped image to standard A4 size
-    rectified_fallback = cv2.resize(cropped, (A4_WIDTH, A4_HEIGHT), interpolation=cv2.INTER_CUBIC)
-    return rectified_fallback
+    metadata = {
+        "rectification_method": "natural_deskew",
+        "a4_detected": result["page_detected"],
+        "confidence": result["confidence"],
+        "corners": result["corners"],
+        "decision": result["decision"],
+        "reason": result["reason"],
+        "a4_geometry_score": result.get("a4_geometry_score", 0.0),
+        "area_ratio": result.get("area_ratio", 0.0)
+    }
+    
+    if result["decision"] == "safe_to_warp":
+        print(f"Rectifier: Safe to warp (method: {result['method']}, conf: {result['confidence']:.2f}).")
+        quad = np.array(result["corners"], dtype=np.float32)
+        metadata["rectification_method"] = result["method"]
+        return warp_to_a4(image, quad), metadata
+        
+    # Fallback: Deskew the image naturally
+    print(f"Rectifier: Not safe to warp ({result['reason']}). Falling back to natural deskew.")
+    return natural_deskew(image), metadata
+
+def natural_deskew(image: np.ndarray) -> np.ndarray:
+    """Deskews the image without aggressively stretching it."""
+    return deskew_image(image)
+
+def warp_to_a4(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    """Warps an ordered 4-point polygon to a standard A4 canvas."""
+    dst = np.array([
+        [0, 0],
+        [A4_WIDTH - 1, 0],
+        [A4_WIDTH - 1, A4_HEIGHT - 1],
+        [0, A4_HEIGHT - 1]
+    ], dtype="float32")
+    
+    M = cv2.getPerspectiveTransform(pts, dst)
+    return cv2.warpPerspective(image, M, (A4_WIDTH, A4_HEIGHT))
 
 
 def detect_and_warp_quad(image: np.ndarray) -> np.ndarray:
     """
     Detects the largest quadrilateral contour and applies perspective warp to A4 size.
+    Validates completeness (padding from edge and aspect ratio).
+    Raises ValueError if the A4 document is incomplete (cut off).
     Returns warped image if successful, otherwise None.
     """
     h, w = image.shape[:2]
@@ -60,6 +89,28 @@ def detect_and_warp_quad(image: np.ndarray) -> np.ndarray:
             # Order the points: Top-Left, Top-Right, Bottom-Right, Bottom-Left
             pts = approx.reshape(4, 2)
             ordered_pts = order_points(pts)
+            
+            # 1. Validate boundary completeness
+            pad = 5 # 5 pixels margin from edge
+            for pt in ordered_pts:
+                px, py = pt[0], pt[1]
+                if px <= pad or py <= pad or px >= (w - pad) or py >= (h - pad):
+                    raise ValueError("Incomplete A4: Document touches the edge of the stitched canvas and is likely cut off.")
+                    
+            # 2. Validate aspect ratio (~1.414 for A4)
+            width_top = np.linalg.norm(ordered_pts[0] - ordered_pts[1])
+            width_bottom = np.linalg.norm(ordered_pts[3] - ordered_pts[2])
+            height_left = np.linalg.norm(ordered_pts[0] - ordered_pts[3])
+            height_right = np.linalg.norm(ordered_pts[1] - ordered_pts[2])
+            
+            avg_width = max(1.0, (width_top + width_bottom) / 2.0)
+            avg_height = max(1.0, (height_left + height_right) / 2.0)
+            
+            aspect_ratio = max(avg_width, avg_height) / min(avg_width, avg_height)
+            # A4 is 1.414. Allow between 1.2 and 1.6 to account for perspective distortion
+            if not (1.2 < aspect_ratio < 1.6):
+                print(f"Rectifier: Aspect ratio {aspect_ratio:.2f} is outside A4 bounds (1.2-1.6). Continuing search...")
+                continue
             
             # Destination points for A4
             dst = np.array([

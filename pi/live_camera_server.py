@@ -7,6 +7,7 @@ import subprocess
 import yaml
 import numpy as np
 import cv2
+import requests
 from flask import Flask, Response, request, send_file, jsonify, render_template
 
 from pi.capture.camera_backend import CameraBackend
@@ -273,6 +274,67 @@ def photo():
                 current_state = CameraState.ERROR
             return jsonify({"status": "error", "message": last_error}), 500
 
+@app.route('/process-highres', methods=['POST'])
+def process_highres():
+    """Takes a high-res photo and POSTs it directly to the Mac Server for AI extraction."""
+    global current_state, last_error
+    
+    stop_active_stream_if_running()
+    
+    with state_lock:
+        if current_state == CameraState.SWEEP_RUNNING:
+            return jsonify({"status": "error", "message": "Camera is busy running a sweep capture."}), 409
+        elif current_state == CameraState.CAPTURING_STILL:
+            return jsonify({"status": "error", "message": "Camera is already capturing a still."}), 409
+        current_state = CameraState.CAPTURING_STILL
+
+    photo_path = os.path.join(data_dir, "autofocus_photo.jpg")
+    
+    with camera_lock:
+        try:
+            success = camera.capture_jpeg(photo_path)
+            if not success:
+                raise RuntimeError("Failed to capture still JPEG from sensor.")
+            
+            with state_lock:
+                current_state = CameraState.IDLE
+                
+            # POST the captured photo to the Mac server
+            # We use 127.0.0.1:8000 because of the reverse SSH tunnel from the Mac
+            server_url = "http://127.0.0.1:8000/process-still"
+            
+            with open(photo_path, 'rb') as f:
+                files = {'file': ('highres.jpg', f, 'image/jpeg')}
+                print(f"Uploading high-res still to {server_url}...")
+                response = requests.post(server_url, files=files, timeout=60)
+                
+            if response.status_code == 200:
+                return jsonify(response.json()), 200
+            else:
+                return jsonify({"status": "error", "message": f"Server responded with {response.status_code}: {response.text}"}), 500
+
+        except Exception as e:
+            last_error = str(e)
+            with state_lock:
+                current_state = CameraState.ERROR
+            return jsonify({"status": "error", "message": last_error}), 500
+
+@app.route('/detect-page-preview', methods=['POST'])
+def proxy_detect_preview():
+    """Proxies the low-res preview frame to the Mac server."""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+        
+    file = request.files['file']
+    server_url = "http://127.0.0.1:8000/detect-page-preview"
+    
+    try:
+        files = {'file': (file.filename, file.read(), file.content_type)}
+        response = requests.post(server_url, files=files, timeout=2)
+        return Response(response.content, status=response.status_code, mimetype=response.headers.get('Content-Type'))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/calibrate', methods=['GET', 'POST'])
 def calibrate():
     """Captures unwarped raw photo for manual 4-corner calibration and runs autofocus once."""
@@ -336,15 +398,17 @@ def sweep_start():
     # Retrieve parameters from request body
     data = request.json or {}
     
-    # Merge defaults from config YAML with body parameters
+    # Architecture relies on reverse SSH tunnel, so we MUST use localhost:8000
+    mac_ip_url = "http://127.0.0.1:8000/process-sweep"
+    
     sweep_config = {
         "interval_ms": data.get("interval_ms", config.get("sweep", {}).get("interval_ms", 150)),
         "max_frames": data.get("max_frames", config.get("sweep", {}).get("max_frames", 120)),
-        "sharpness_threshold": data.get("sharpness_threshold", config.get("sweep", {}).get("sharpness_threshold", 120.0)),
+        "sharpness_threshold": data.get("sharpness_threshold", config.get("sweep", {}).get("sharpness_threshold", 25.0)),
         "min_frame_difference": data.get("min_frame_difference", config.get("sweep", {}).get("min_frame_difference", 8.0)),
         "jpeg_quality": data.get("jpeg_quality", config.get("sweep", {}).get("jpeg_quality", 90)),
         "upload_after_capture": data.get("upload_after_capture", config.get("sweep", {}).get("upload_after_capture", False)),
-        "server_url": data.get("server_url", config.get("server", {}).get("url", ""))
+        "server_url": mac_ip_url
     }
     
     # Update camera backend resolution if requested
@@ -428,8 +492,15 @@ def sweep_status():
         
     if active_session:
         stats = active_session.get_status()
+        
+        # Auto-cleanup lock if thread died or finished max_frames
+        if not stats["running"]:
+            with state_lock:
+                if current_state == CameraState.SWEEP_RUNNING:
+                    current_state = CameraState.IDLE
+                    
         return jsonify({
-            "status": "running" if stats["running"] else "stopping",
+            "status": "running" if stats["running"] else "stopped",
             "current_session_id": active_session_id,
             "accepted_frames": stats["accepted_frames"],
             "rejected_frames": stats["rejected_frames"],
@@ -499,20 +570,8 @@ def sweep_upload(session_id):
     if not os.path.exists(session_path):
         return jsonify({"status": "error", "message": "Session not found"}), 404
         
-    # Read server URL from manifest
-    manifest_path = os.path.join(session_path, "manifest.json")
-    server_url = config.get("server", {}).get("url", "")
-    
-    if os.path.exists(manifest_path):
-        try:
-            with open(manifest_path, 'r') as f:
-                m = json.load(f)
-            server_url = m.get("capture_config", {}).get("server_url", server_url)
-        except Exception:
-            pass
-            
-    if not server_url:
-        return jsonify({"status": "error", "message": "Server URL not configured."}), 400
+    # Architecture relies on reverse SSH tunnel, MUST be localhost
+    server_url = "http://127.0.0.1:8000/process-sweep"
         
     zip_path = os.path.join(data_dir, f"{session_id}.zip")
     

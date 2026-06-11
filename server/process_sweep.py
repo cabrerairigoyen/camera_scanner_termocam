@@ -38,6 +38,7 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
     
     # Intermediate stats tracking
     session_id = "unknown"
+    meta = {}
     input_stats = {"frame_count": 0, "resolution": [0, 0]}
     stitching_stats = {
         "method_attempted": ["SCANS", "PANORAMA", "CUSTOM_FEATURE"],
@@ -118,7 +119,7 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
             
         # 5. Rectify stitched output
         print(f"Server Job {job_id}: Rectifying stitched image...")
-        rectified = rectify_to_a4(stitched)
+        rectified, meta = rectify_to_a4(stitched)
         
         # 6. Enhance rectified output
         print(f"Server Job {job_id}: Enhancing for OCR...")
@@ -152,6 +153,24 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
         confidences = [line["confidence"] for line in ocr_result.get("lines", [])]
         ocr_stats["mean_confidence"] = np.mean(confidences) if confidences else 0.0
         
+        # 10. Auto-forward OCR text to math solver backend (if enabled)
+        auto_solve = os.environ.get("AUTO_SOLVE_AFTER_OCR", "false").lower() == "true"
+        if auto_solve:
+            print(f"Server Job {job_id}: AUTO_SOLVE_AFTER_OCR enabled — forwarding to solver...")
+            try:
+                from server.solver_bridge import forward_ocr_to_solver
+                solver_bridge_status = forward_ocr_to_solver(
+                    ocr_result=ocr_result,
+                    job_path=job_path,
+                    blocking=False,  # Background thread — sweep returns immediately
+                )
+                output_files["solver_bridge_status"] = solver_bridge_status.get("reason") or (
+                    "launched" if solver_bridge_status.get("launched") else "skipped"
+                )
+            except Exception as bridge_err:
+                print(f"Server Job {job_id}: Solver bridge error: {bridge_err}")
+                output_files["solver_bridge_status"] = f"error: {bridge_err}"
+        
     except Exception as e:
         print(f"Server Job {job_id} Pipeline Error: {e}")
         stitching_stats["status"] = "failed"
@@ -176,4 +195,15 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
         report_output_path=debug_report_path
     )
     
+    # Read the generated report and inject page_detection
+    try:
+        with open(debug_report_path, "r") as f:
+            report_data = json.load(f)
+        report_data["page_detection"] = meta
+        with open(debug_report_path, "w") as f:
+            json.dump(report_data, f, indent=2)
+        report = report_data
+    except Exception as e:
+        print(f"Server Job {job_id}: Could not inject page_detection into report: {e}")
+        
     return report

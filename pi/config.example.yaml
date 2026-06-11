@@ -14,7 +14,7 @@ sweep:
 
 # Processing server settings
 server:
-  url: "http://192.168.1.151:8000/process-sweep"
+  url: "http://192.168.1.69:8000/process-sweep"
 
 # Protection limits for resource-constrained Pi Zero 2W
 limits:

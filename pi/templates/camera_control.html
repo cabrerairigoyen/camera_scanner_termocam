@@ -456,18 +456,23 @@
                     <div class="video-wrapper">
                         <!-- Standard dynamic host detection for relative streaming -->
                         <img src="" id="streamImg" class="video-feed" alt="Live Feed">
+                        <canvas id="aiOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
                         <div class="video-placeholder" id="streamPlaceholder">
                             <span>Camera Stream Stopped</span>
                             <button class="btn btn-secondary" onclick="toggleStream()">Start Stream</button>
                         </div>
-                        <div class="video-overlay" id="streamOverlay" style="display: none;">
-                            <span class="live-dot"></span> LIVE
+                        <div class="video-overlay" id="streamOverlay" style="display: none; flex-direction: column; align-items: flex-start;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span class="live-dot"></span> LIVE
+                            </div>
+                            <div id="aiInstruction" style="margin-top: 4px; font-size: 0.9rem; color: var(--warning);">AI Off</div>
                         </div>
                     </div>
                     <div class="controls-row">
-                        <button class="btn btn-secondary" id="toggleStreamBtn" onclick="toggleStream()">Start Alignment Stream</button>
-                        <button class="btn btn-secondary" onclick="triggerAutofocus()">🎯 Focus Once</button>
-                        <button class="btn btn-primary" onclick="captureStill()">📸 Capture Legacy Still</button>
+                        <button class="btn btn-secondary" id="toggleStreamBtn" onclick="toggleStream()">Start Stream</button>
+                        <button class="btn btn-secondary" onclick="triggerAutofocus()">🎯 Focus</button>
+                        <button class="btn btn-primary" id="captureAiBtn" onclick="captureHighResAI()" style="background: var(--success); display: none;">✨ AI Auto-Capture</button>
+                        <button class="btn btn-secondary" onclick="captureStill()">📸 Legacy Still</button>
                     </div>
                 </div>
 
@@ -519,7 +524,7 @@
                         </div>
                         <div class="form-group">
                             <label for="sharpnessThresh">Sharpness Thresh</label>
-                            <input type="number" id="sharpnessThresh" value="120" min="10" max="500">
+                            <input type="number" id="sharpnessThresh" value="25" min="10" max="500">
                         </div>
                         <div class="form-group">
                             <label for="minDiff">Min Motion Diff</label>
@@ -537,9 +542,9 @@
                                 <option value="1280x720">1280 x 720 (720p)</option>
                             </select>
                         </div>
-                        <div class="form-group full-width">
-                            <label for="serverUrl">Processing Server</label>
-                            <input type="text" id="serverUrl" value="http://192.168.1.151:8000/process-sweep">
+                        <div class="form-group">
+                            <label for="serverUrl">Server Upload URL</label>
+                            <input type="text" id="serverUrl" value="http://127.0.0.1:8000/process-sweep">
                         </div>
                         <div class="form-group full-width" style="flex-direction: row; gap: 10px; align-items: center; margin-top: 5px;">
                             <input type="checkbox" id="uploadAfter" style="width: auto;">
@@ -570,6 +575,12 @@
 
         // Automatically configure dynamic stream image URL
         const hostUrl = window.location.origin;
+        
+        // Auto-configure the Server Upload URL based on the current hostname
+        document.addEventListener('DOMContentLoaded', () => {
+            const defaultServerUrl = `http://${window.location.hostname}:8000/process-sweep`;
+            document.getElementById('serverUrl').value = defaultServerUrl;
+        });
 
         // Show floating message
         function showToast(message, type = 'success') {
@@ -611,6 +622,7 @@
                 overlay.style.display = 'flex';
                 btn.textContent = 'Stop Alignment Stream';
                 isStreaming = true;
+                setTimeout(aiPreviewLoop, 500); // Start the AI overlay loop
             } else {
                 img.removeAttribute('src');
                 img.style.display = 'none';
@@ -645,6 +657,112 @@
                     }
                 })
                 .catch(err => showToast("Connection failed.", "error"));
+        }
+
+        let aiLoopActive = false;
+        async function aiPreviewLoop() {
+            if (!isStreaming || aiLoopActive) return;
+            aiLoopActive = true;
+            
+            const img = document.getElementById('streamImg');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Downsample to 640x360 for fast inference
+            canvas.width = 640;
+            canvas.height = 360;
+            
+            try {
+                // For an MJPEG stream, img.complete may never be true, so we just check if it has dimensions
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.5));
+                    
+                    const formData = new FormData();
+                    formData.append('file', blob, 'preview.jpg');
+                    
+                    const response = await fetch(`${hostUrl}/detect-page-preview`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        drawAIPolygon(data.corners, data.instruction, data.capture_ready);
+                    }
+                }
+            } catch (e) {
+                console.error("AI Preview Loop error:", e);
+            }
+            
+            aiLoopActive = false;
+            // Schedule next frame
+            if (isStreaming) {
+                setTimeout(aiPreviewLoop, 200); // 5 FPS
+            } else {
+                // Clear overlay when stopped
+                const overlay = document.getElementById('aiOverlay');
+                const ctx2 = overlay.getContext('2d');
+                ctx2.clearRect(0, 0, overlay.width, overlay.height);
+                document.getElementById('aiInstruction').textContent = "AI Off";
+                document.getElementById('captureAiBtn').style.display = 'none';
+            }
+        }
+
+        function drawAIPolygon(corners, instruction, ready) {
+            const overlay = document.getElementById('aiOverlay');
+            const img = document.getElementById('streamImg');
+            
+            // Match canvas size to displayed image size
+            overlay.width = img.clientWidth;
+            overlay.height = img.clientHeight;
+            
+            const ctx = overlay.getContext('2d');
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            
+            const instrEl = document.getElementById('aiInstruction');
+            instrEl.textContent = instruction;
+            instrEl.style.color = ready ? 'var(--success)' : 'var(--warning)';
+            
+            const btn = document.getElementById('captureAiBtn');
+            btn.style.display = ready ? 'inline-flex' : 'none';
+            
+            if (corners && corners.length === 4) {
+                // Map the 640x360 coordinates to the current display size
+                const scaleX = overlay.width / 640.0;
+                const scaleY = overlay.height / 360.0;
+                
+                ctx.beginPath();
+                ctx.moveTo(corners[0][0] * scaleX, corners[0][1] * scaleY);
+                for (let i = 1; i < 4; i++) {
+                    ctx.lineTo(corners[i][0] * scaleX, corners[i][1] * scaleY);
+                }
+                ctx.closePath();
+                
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = ready ? '#10b981' : '#f59e0b';
+                ctx.fillStyle = ready ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)';
+                ctx.stroke();
+                ctx.fill();
+            }
+        }
+
+        function captureHighResAI() {
+            showToast("Capturing AI-Assisted High-Res Document...", "warning");
+            
+            fetch(`${hostUrl}/process-highres`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === "error") {
+                        showToast(data.message, "error");
+                    } else {
+                        showToast(`Sent to Server! Job ID: ${data.job_id}`);
+                        // Start polling the job status if we had a polling loop
+                        // For now we just show toast.
+                    }
+                })
+                .catch(err => showToast("Failed to process High-Res AI capture.", "error"));
         }
 
         // Start sweep capture session
@@ -744,12 +862,16 @@
                     document.getElementById('progressBar').style.width = `${pct}%`;
 
                     if (data.status === 'idle' || data.status === 'stopped') {
-                        // Automatically stopped (hit limit)
-                        isRunning = false;
-                        document.getElementById('startSweepBtn').disabled = false;
-                        document.getElementById('stopSweepBtn').disabled = true;
-                        clearInterval(activeSweepInterval);
-                        fetchSessions();
+                        // Automatically stopped (hit limit or error)
+                        if (isRunning && data.status === 'stopped') {
+                            stopSweep(); // This triggers compilation and upload
+                        } else {
+                            isRunning = false;
+                            document.getElementById('startSweepBtn').disabled = false;
+                            document.getElementById('stopSweepBtn').disabled = true;
+                            clearInterval(activeSweepInterval);
+                            fetchSessions();
+                        }
                     }
                 })
                 .catch(err => {
