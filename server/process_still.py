@@ -69,9 +69,10 @@ def process_highres_still(image_path: str, job_id: str, jobs_dir: str) -> dict:
     output_files["pdf"] = os.path.basename(reconstructed_pdf_path)
     
     print(f"Server Job {job_id}: Performing OCR...")
-    ocr_result = run_ocr(reconstructed_jpg_path, ocr_json_path)
-    if ocr_result and os.path.exists(ocr_json_path):
-        output_files["ocr_data"] = os.path.basename(ocr_json_path)
+    ocr_result = run_ocr(reconstructed_jpg_path)
+    with open(ocr_json_path, "w") as f:
+        json.dump(ocr_result, f, indent=2)
+    output_files["ocr_json"] = os.path.basename(ocr_json_path)
         
     debug_info = {
         "job_id": job_id,
@@ -82,13 +83,21 @@ def process_highres_still(image_path: str, job_id: str, jobs_dir: str) -> dict:
     
     # We will update debug_report generation to include the page_detection key
     generate_debug_report(
-        debug_report_path=debug_report_path,
         job_id=job_id,
+        session_id="",
         input_stats={"frame_count": 1, "resolution": list(image.shape[:2])},
         stitching_stats={"method_used": "none (still)", "status": "skipped"},
         quality_stats={"mean_sharpness": 0, "rejected_server_side": 0},
-        ocr_stats={"engine": ocr_result.get("engine", "unknown") if ocr_result else "failed"},
-        output_files=output_files
+        ocr_stats={
+            "engine": ocr_result.get("engine", "unknown") if ocr_result else "failed",
+            "line_count": len(ocr_result.get("lines", [])) if ocr_result else 0,
+            "mean_confidence": (
+                sum(line.get("confidence", 0.0) for line in ocr_result.get("lines", []))
+                / max(len(ocr_result.get("lines", [])), 1)
+            ) if ocr_result else 0.0,
+        },
+        output_files=output_files,
+        report_output_path=debug_report_path,
     )
     
     # Read the generated report and inject page_detection

@@ -48,9 +48,13 @@ venv_311/
 # Local/secrets configurations
 .env
 .env.*
+!.env.example
 config.yaml
 
 # Local data cache
 .brain_lcd/
 data/
 capture/
+!pi/capture/
+!pi/capture/**
+pi/capture/__pycache__/

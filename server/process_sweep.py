@@ -12,7 +12,9 @@ from server.rectify import rectify_to_a4
 from server.enhance import enhance_for_ocr
 from server.ocr import run_ocr
 from server.debug_report import generate_debug_report
-from pi.capture.frame_quality import sharpness_laplacian
+def sharpness_laplacian(image) -> float:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
 def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
@@ -58,6 +60,13 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
         # 1. Unzip the session
         print(f"Server Job {job_id}: Extracting ZIP...")
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            for member in zip_ref.infolist():
+                destination = os.path.realpath(os.path.join(temp_dir, member.filename))
+                if not destination.startswith(os.path.realpath(temp_dir) + os.sep):
+                    raise ValueError("Unsafe ZIP member path.")
+                mode = member.external_attr >> 16
+                if (mode & 0o170000) == 0o120000:
+                    raise ValueError("ZIP symlinks are not allowed.")
             zip_ref.extractall(temp_dir)
             
         # 2. Read manifest.json
@@ -194,12 +203,14 @@ def process_sweep_zip(zip_path: str, job_id: str, jobs_dir: str) -> dict:
         output_files=output_files,
         report_output_path=debug_report_path
     )
+    report["status"] = "SUCCEEDED" if stitching_stats["status"] == "success" else "FAILED"
     
     # Read the generated report and inject page_detection
     try:
         with open(debug_report_path, "r") as f:
             report_data = json.load(f)
         report_data["page_detection"] = meta
+        report_data["status"] = report["status"]
         with open(debug_report_path, "w") as f:
             json.dump(report_data, f, indent=2)
         report = report_data

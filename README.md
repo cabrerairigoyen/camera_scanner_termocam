@@ -136,3 +136,9 @@ Install the Pi and server dependencies separately:
 
 Then run the Pi app on the capture device and the FastAPI server on the processing host.
 
+## Durable Server
+
+The reconstruction server now supports database-backed documents, pages, jobs,
+artifacts, events, restart recovery, a separate worker, and an HTTP solver
+contract. See `docs/server_orchestration.md` for migrations, commands, API
+examples, compatibility behavior, and current limitations.

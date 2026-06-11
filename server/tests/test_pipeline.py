@@ -4,9 +4,10 @@ import shutil
 import tempfile
 import json
 import zipfile
+import asyncio
+import httpx
 import numpy as np
 import cv2
-from fastapi.testclient import TestClient
 
 # Adjust path to import from server and pi
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -16,6 +17,7 @@ from pi.capture.sweep_session import SweepSession
 from pi.capture.uploader import zip_session
 from pi.live_camera_server import app as flask_app
 from server.app import app as fastapi_app
+from server.db import init_db
 from server.process_sweep import process_sweep_zip
 
 
@@ -195,7 +197,13 @@ def test_pi_edge_server_locking():
 
 def test_fastapi_server_reconstruction_failure():
     """Verify FastAPI processing endpoint accepts ZIP uploads and fails gracefully on un-stitchable frames."""
-    client = TestClient(fastapi_app)
+    init_db()
+    def post(path, **kwargs):
+        async def run():
+            transport = httpx.ASGITransport(app=fastapi_app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                return await client.post(path, **kwargs)
+        return asyncio.run(run())
     
     # 1. Create a dummy zip session with random noise frames that cannot be stitched
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -238,7 +246,7 @@ def test_fastapi_server_reconstruction_failure():
         # Re-create ZIP file
         zip_session(session_dir, zip_path)
         with open(zip_path, 'rb') as f:
-            response = client.post("/process-sweep", files={"file": ("dummy.zip", f, "application/zip")})
+            response = post("/process-sweep", files={"file": ("dummy.zip", f, "application/zip")})
             
         assert response.status_code == 200
         data = response.json()
@@ -274,4 +282,3 @@ if __name__ == "__main__":
     else:
         print("\nSome tests FAILED.")
         sys.exit(1)
-

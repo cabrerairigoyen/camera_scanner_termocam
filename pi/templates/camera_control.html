@@ -382,6 +382,35 @@
             gap: 8px;
         }
 
+        .document-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+            background: rgba(10, 15, 28, 0.5);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .document-summary .summary-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .summary-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-value {
+            font-size: 0.95rem;
+            word-break: break-word;
+        }
+
         .btn-icon {
             padding: 8px;
             border-radius: 6px;
@@ -478,7 +507,7 @@
 
                 <!-- Active Sweep Session Card -->
                 <div class="card">
-                    <div class="card-title">🔄 Sweep Session Control</div>
+                    <div class="card-title">🔄 Legacy / Advanced Sweep Session Control</div>
                     
                     <div class="controls-row">
                         <button class="btn btn-primary" id="startSweepBtn" onclick="startSweep()">🚀 Start New Sweep</button>
@@ -553,6 +582,88 @@
                     </div>
                 </div>
 
+                <!-- Document Session Card -->
+                <div class="card">
+                    <div class="card-title">📄 Document Scan Mode</div>
+                    <div class="config-form">
+                        <div class="form-group">
+                            <label for="docCourse">Course</label>
+                            <input type="text" id="docCourse" placeholder="GFN252">
+                        </div>
+                        <div class="form-group">
+                            <label for="docLanguage">Language</label>
+                            <input type="text" id="docLanguage" value="fr">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="docTitle">Title</label>
+                            <input type="text" id="docTitle" placeholder="Exam scan">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="docAttachId">Attach existing document ID</label>
+                            <input type="text" id="docAttachId" placeholder="doc_...">
+                        </div>
+                    </div>
+                    <div class="controls-row" style="flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="startDocument()">Start document</button>
+                        <button class="btn btn-secondary" onclick="attachDocument()">Attach document</button>
+                        <button class="btn btn-secondary" onclick="resyncDocument()">Resync</button>
+                        <button class="btn btn-secondary" onclick="captureDocumentStill()">Capture page still</button>
+                        <button class="btn btn-secondary" onclick="startDocumentSweep()">Start sweep page</button>
+                        <button class="btn btn-secondary" onclick="stopDocumentSweep()">Stop sweep and upload page</button>
+                        <button class="btn btn-primary" onclick="finishDocument()">Finish document</button>
+                        <button class="btn btn-secondary" onclick="pollDocumentEvents()">Poll events</button>
+                        <button class="btn btn-danger" onclick="resetDocument()">Reset document</button>
+                    </div>
+                    <p style="color:var(--warning); font-size:0.82rem; margin-top:12px;">
+                        Reset clears local Pi state only unless server deletion is supported.
+                    </p>
+                    <div class="document-summary">
+                        <div class="summary-item">
+                            <div class="summary-label">Document ID</div>
+                            <div class="summary-value" id="documentIdValue">-</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Local Status</div>
+                            <div class="summary-value" id="documentStatusValue">IDLE</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Next Page</div>
+                            <div class="summary-value" id="documentNextPageValue">1</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Server Reachable</div>
+                            <div class="summary-value" id="documentServerStatusValue">unknown</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Server Document Status</div>
+                            <div class="summary-value" id="documentServerDocumentStatusValue">-</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">State Persisted</div>
+                            <div class="summary-value" id="documentPersistedValue">unknown</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Needs Resync</div>
+                            <div class="summary-value" id="documentNeedsResyncValue">no</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Last Uploaded Page</div>
+                            <div class="summary-value" id="documentLastPageValue">-</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Latest Event</div>
+                            <div class="summary-value" id="documentLastEventValue">-</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Last Error</div>
+                            <div class="summary-value" id="documentLastErrorValue">-</div>
+                        </div>
+                    </div>
+                    <div class="sessions-list" id="documentEventsList" style="margin-top: 14px; max-height: 240px;">
+                        <p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No document events yet.</p>
+                    </div>
+                </div>
+
                 <!-- Past Sessions Card -->
                 <div class="card">
                     <div class="card-title">📁 Past Sweep Sessions</div>
@@ -572,6 +683,8 @@
         let activeSweepInterval = null;
         let isRunning = false;
         let maxFramesAllowed = 120;
+        let documentEventInterval = null;
+        let lastDocumentEventSequence = 0;
 
         // Automatically configure dynamic stream image URL
         const hostUrl = window.location.origin;
@@ -763,6 +876,321 @@
                     }
                 })
                 .catch(err => showToast("Failed to process High-Res AI capture.", "error"));
+        }
+
+        function updateDocumentSummary(data) {
+            if (!data) return;
+            document.getElementById('documentIdValue').textContent = data.document_id || '-';
+            document.getElementById('documentStatusValue').textContent = data.local_status || data.status || 'IDLE';
+            document.getElementById('documentNextPageValue').textContent = data.next_page_number ?? 1;
+            document.getElementById('documentServerStatusValue').textContent =
+                data.server_reachable === true ? 'online' : (data.server_reachable === false ? 'offline' : 'unknown');
+            document.getElementById('documentServerDocumentStatusValue').textContent = data.server_document_status || '-';
+            document.getElementById('documentPersistedValue').textContent =
+                data.state_persisted === true ? 'yes' : (data.state_persisted === false ? 'no' : 'unknown');
+            document.getElementById('documentNeedsResyncValue').textContent = data.needs_resync ? 'yes' : 'no';
+            document.getElementById('documentLastErrorValue').textContent =
+                data.last_error ? `${data.last_error.code}: ${data.last_error.message}` : '-';
+            document.getElementById('documentLastPageValue').textContent = data.last_page_number ?? data.last_uploaded_page ?? '-';
+            document.getElementById('documentLastEventValue').textContent = data.last_event_text || '-';
+            if (typeof data.last_event_sequence === 'number') {
+                lastDocumentEventSequence = data.last_event_sequence;
+            }
+        }
+
+        function renderDocumentEvents(events) {
+            const list = document.getElementById('documentEventsList');
+            if (!events || events.length === 0) {
+                if (!list.children.length || list.textContent.includes('No document events yet.')) {
+                    list.innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No document events yet.</p>`;
+                }
+                return;
+            }
+            list.innerHTML = '';
+            events.forEach(evt => {
+                const item = document.createElement('div');
+                item.className = 'session-item';
+                const text = evt.spoken_text || evt.message_key || evt.event_type;
+                item.innerHTML = `
+                    <div class="session-info">
+                        <h4>#${evt.sequence} ${evt.event_type || 'EVENT'}</h4>
+                        <p>${text}</p>
+                        <p style="margin-top:4px;">Severity: <b>${evt.severity || 'info'}</b>${evt.page_number ? ` • Page ${evt.page_number}` : ''}</p>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+            const latest = events[events.length - 1];
+            document.getElementById('documentLastEventValue').textContent = latest.spoken_text || latest.message_key || '-';
+            if (latest.page_number) {
+                document.getElementById('documentLastPageValue').textContent = latest.page_number;
+            }
+        }
+
+        function ensureDocumentPolling() {
+            if (documentEventInterval) clearInterval(documentEventInterval);
+            documentEventInterval = setInterval(() => {
+                const documentId = document.getElementById('documentIdValue').textContent;
+                if (documentId && documentId !== '-') {
+                    pollDocumentEvents();
+                }
+            }, 2500);
+        }
+
+        function stopDocumentPolling() {
+            if (documentEventInterval) {
+                clearInterval(documentEventInterval);
+                documentEventInterval = null;
+            }
+        }
+
+        function startDocument() {
+            const payload = {
+                course: document.getElementById('docCourse').value || null,
+                language: document.getElementById('docLanguage').value || null,
+                title: document.getElementById('docTitle').value || null
+            };
+            fetch(`${hostUrl}/document/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || data?.message || "Failed to start document.", "error");
+                    return;
+                }
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: data.status,
+                    next_page_number: data.next_page_number,
+                    server_reachable: true,
+                    last_event_text: '-',
+                    last_page_number: '-',
+                    last_event_sequence: 0
+                });
+                document.getElementById('documentEventsList').innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No document events yet.</p>`;
+                showToast(`Document ${data.document_id.substring(0, 8)} started.`, "success");
+                ensureDocumentPolling();
+            })
+            .catch(() => showToast("Network error starting document.", "error"));
+        }
+
+        function captureDocumentStill() {
+            fetch(`${hostUrl}/document/capture-still`, { method: 'POST' })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || data?.message || "Capture failed.", "error");
+                    return;
+                }
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: "WAITING_QUALITY",
+                    next_page_number: data.page_number + 1,
+                    server_reachable: true,
+                    last_event_text: `Page ${data.page_number} uploaded.`,
+                    last_page_number: data.page_number,
+                    last_event_sequence: lastDocumentEventSequence
+                });
+                showToast(`Page ${data.page_number} uploaded.`, "success");
+                pollDocumentEvents();
+            })
+            .catch(() => showToast("Network error uploading page.", "error"));
+        }
+
+        function attachDocument() {
+            const documentId = document.getElementById('docAttachId').value.trim();
+            if (!documentId) {
+                showToast("Enter a document ID to attach.", "error");
+                return;
+            }
+            fetch(`${hostUrl}/document/attach`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ document_id: documentId })
+            })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || "Failed to attach document.", "error");
+                    refreshDocumentStatus();
+                    return;
+                }
+                updateDocumentSummary(data);
+                showToast(`Attached ${data.document_id}.`, "success");
+                ensureDocumentPolling();
+                refreshDocumentStatus();
+            })
+            .catch(() => showToast("Network error attaching document.", "error"));
+        }
+
+        function resyncDocument() {
+            fetch(`${hostUrl}/document/resync`, { method: 'POST' })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || "Failed to resync document.", "error");
+                    refreshDocumentStatus();
+                    return;
+                }
+                updateDocumentSummary(data);
+                showToast("Document state resynced.", "success");
+                ensureDocumentPolling();
+                refreshDocumentStatus();
+            })
+            .catch(() => showToast("Network error resyncing document.", "error"));
+        }
+
+        function startDocumentSweep() {
+            fetch(`${hostUrl}/document/capture-sweep/start`, { method: 'POST' })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || data?.message || "Failed to start sweep page.", "error");
+                    return;
+                }
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: "CAPTURING_PAGE",
+                    next_page_number: data.page_number,
+                    server_reachable: true,
+                    last_event_text: 'Sweep page capture started.',
+                    last_page_number: data.page_number,
+                    last_event_sequence: lastDocumentEventSequence
+                });
+                showToast("Sweep page capture started.", "success");
+            })
+            .catch(() => showToast("Network error starting sweep page.", "error"));
+        }
+
+        function stopDocumentSweep() {
+            fetch(`${hostUrl}/document/capture-sweep/stop`, { method: 'POST' })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || data?.message || "Failed to stop sweep page.", "error");
+                    return;
+                }
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: "WAITING_QUALITY",
+                    next_page_number: data.page_number + 1,
+                    server_reachable: true,
+                    last_event_text: `Page ${data.page_number} uploaded.`,
+                    last_page_number: data.page_number,
+                    last_event_sequence: lastDocumentEventSequence
+                });
+                showToast(`Sweep page ${data.page_number} uploaded.`, "success");
+                pollDocumentEvents();
+            })
+            .catch(() => showToast("Network error stopping sweep page.", "error"));
+        }
+
+        function finishDocument() {
+            const expectedPagesRaw = prompt("Expected page count?", document.getElementById('documentNextPageValue').textContent || "1");
+            if (expectedPagesRaw === null) return;
+            const expected_page_count = parseInt(expectedPagesRaw, 10);
+            const payload = {
+                expected_page_count: Number.isFinite(expected_page_count) && expected_page_count > 0 ? expected_page_count : 1,
+                solve: true,
+                answer_mode: "standard"
+            };
+            fetch(`${hostUrl}/document/finish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || data?.message || "Failed to finish document.", "error");
+                    return;
+                }
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: data.status,
+                    next_page_number: document.getElementById('documentNextPageValue').textContent,
+                    server_reachable: true,
+                    last_event_text: 'Document processing started.',
+                    last_page_number: document.getElementById('documentLastPageValue').textContent,
+                    last_event_sequence: lastDocumentEventSequence
+                });
+                showToast("Document submitted for processing.", "success");
+            })
+            .catch(() => showToast("Network error finishing document.", "error"));
+        }
+
+        function pollDocumentEvents() {
+            const documentId = document.getElementById('documentIdValue').textContent;
+            if (!documentId || documentId === '-') {
+                return;
+            }
+            fetch(`${hostUrl}/document/events?after_sequence=${lastDocumentEventSequence}`)
+            .then(res => res.json().then(data => ({ status: res.status, data })))
+            .then(({ status, data }) => {
+                if (status >= 400) {
+                    showToast(data?.error?.message || "Failed to poll document events.", "error");
+                    return;
+                }
+                if (data.next_after_sequence > lastDocumentEventSequence) {
+                    lastDocumentEventSequence = data.next_after_sequence;
+                }
+                renderDocumentEvents(data.events || []);
+                updateDocumentSummary({
+                    document_id: documentId,
+                    local_status: document.getElementById('documentStatusValue').textContent,
+                    next_page_number: document.getElementById('documentNextPageValue').textContent,
+                    server_reachable: true,
+                    last_event_text: (data.events && data.events.length) ? (data.events[data.events.length - 1].spoken_text || data.events[data.events.length - 1].message_key) : document.getElementById('documentLastEventValue').textContent,
+                    last_page_number: document.getElementById('documentLastPageValue').textContent,
+                    last_event_sequence: lastDocumentEventSequence
+                });
+            })
+            .catch(() => showToast("Network error polling events.", "error"));
+        }
+
+        function resetDocument() {
+            if (!confirm("Reset clears local Pi state only. The server document will not be deleted. Continue?")) {
+                return;
+            }
+            fetch(`${hostUrl}/document/reset`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                updateDocumentSummary({
+                    document_id: data.document_id,
+                    local_status: data.status,
+                    next_page_number: data.next_page_number,
+                    server_reachable: true,
+                    last_event_text: '-',
+                    last_page_number: '-',
+                    last_event_sequence: 0,
+                    state_persisted: false,
+                    needs_resync: false,
+                    last_error: null,
+                    server_document_status: null
+                });
+                document.getElementById('documentEventsList').innerHTML = `<p style="color:var(--text-muted); font-size:0.9rem; text-align:center;">No document events yet.</p>`;
+                lastDocumentEventSequence = 0;
+                stopDocumentPolling();
+                showToast("Document reset.", "success");
+            })
+            .catch(() => showToast("Network error resetting document.", "error"));
+        }
+
+        function refreshDocumentStatus() {
+            fetch(`${hostUrl}/document/status`)
+            .then(res => res.json())
+            .then(data => {
+                updateDocumentSummary(data);
+                if (data.document_id) {
+                    ensureDocumentPolling();
+                }
+            })
+            .catch(() => {
+                document.getElementById('documentServerStatusValue').textContent = 'offline';
+            });
         }
 
         // Start sweep capture session
@@ -1014,6 +1442,9 @@
         // Start initialization
         setInterval(checkSystemHealth, 2000);
         checkSystemHealth();
+        setInterval(refreshDocumentStatus, 4000);
+        refreshDocumentStatus();
+        ensureDocumentPolling();
         fetchSessions();
     </script>
 </body>

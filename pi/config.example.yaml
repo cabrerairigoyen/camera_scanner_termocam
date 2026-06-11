@@ -14,7 +14,14 @@ sweep:
 
 # Processing server settings
 server:
+  base_url: "http://127.0.0.1:8000"
   url: "http://192.168.1.69:8000/process-sweep"
+
+# Document scan settings
+document:
+  default_course: ""
+  default_language: "fr"
+  request_timeout_seconds: 60
 
 # Protection limits for resource-constrained Pi Zero 2W
 limits:
